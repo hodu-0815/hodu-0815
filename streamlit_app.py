@@ -11,13 +11,18 @@ st.set_page_config(page_title="일본어 복습 (Japanese Review)", page_icon="�
 
 # --- Configuration: Documents ---
 DOCS = {
-    "3월": "1fRVKctT-AugOBh6cnBxs3xQZot8A7Xl1eEHrZdVCs_M",
-    "4월": "1bmIMVBstBX-nQjwONtR3Sgixh_fLc4ERPHOzcFgmV04",
-    "5월": "1vYm0woPy59Jwh1zvM57fCkMnqpZSS7vZAmqaqIlKxt4",
-    "6월": "1p7tMZQWtEovCw-eZFzGMtsAmIQa0IZA7QFcRwaiSDA8",
-    "7월": "1IFWsUU3XLQYfwuQ-uEjiTnVyBfovE8NoB7JqfNuFDMM",
-    "8, 9월": "1ftFaVRGxNI8ODx2Nq2huPcstpkCEyza-tmN8TcfjWus",
-    "10, 11, 12, 1월": "1dj6sNkMlEUN61eQMbe475yW7vyFcsXhr_N2kr4VLrzQ"
+    "2025년 3월": "1fRVKctT-AugOBh6cnBxs3xQZot8A7Xl1eEHrZdVCs_M",
+    "2025년 4월": "1bmIMVBstBX-nQjwONtR3Sgixh_fLc4ERPHOzcFgmV04",
+    "2025년 5월": "1vYm0woPy59Jwh1zvM57fCkMnqpZSS7vZAmqaqIlKxt4",
+    "2025년 6월": "1p7tMZQWtEovCw-eZFzGMtsAmIQa0IZA7QFcRwaiSDA8",
+    "2025년 7월": "1IFWsUU3XLQYfwuQ-uEjiTnVyBfovE8NoB7JqfNuFDMM",
+    "2025년 8월": "1ftFaVRGxNI8ODx2Nq2huPcstpkCEyza-tmN8TcfjWus",
+    "2025년 9월": "15qLaEi2Zt2TkQSCYazdu81hI4jSL6v7mYp5YvNtEKH0",
+    "2025년 10월": "1dj6sNkMlEUN61eQMbe475yW7vyFcsXhr_N2kr4VLrzQ",
+    "2025년 11월": "1G0tRrvYgTnwZ7nbitJ-8QheBpdc0TmIvJEjHYlNXoLE",
+    "2025년 12월": "1cyfAuQ2X87WOVLwr_8SZQbvK27ZrsRyAmxGR5Rf8NoY",
+    "2026년 1월": "1At-w6SNXvaQczO5sr4Hofuq8IV3q-ujBRGE7uXSa3gE",
+    "2026년 2월": "1o3hJwHd0Le2rlYEk9g1ojqARiadDgDfnJvwXkosGThc"
 }
 
 # --- Logic: Parser ---
