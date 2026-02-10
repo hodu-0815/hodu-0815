@@ -369,6 +369,52 @@ def reset_quiz():
     st.session_state.quiz_state['active'] = False
 
 
+# --- Logic: Vocabulary ---
+@st.cache_data(ttl=3600, show_spinner=False)
+def extract_vocabulary(text):
+    try:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        
+        prompt = f"""
+        당신은 일본어 선생님입니다. 
+        아래 텍스트에서 학습에 필요한 **주요 단어와 숙어**를 추출해서 정리해주세요.
+        
+        [지침]
+        1. 전체 문장이 아니라 **단어(Word)**나 **숙어(Idiom)** 위주로 뽑아주세요.
+        2. 너무 쉬운 기초 단어는 제외하고, 학습 가치가 있는 단어 위주로 20~30개 정도 추출하세요.
+        3. 문맥상 중요한 단어를 우선하세요.
+        
+        [출력 형식 (JSON Array Only)]
+        [
+          {{
+            "word": "食べる",
+            "meaning": "먹다",
+            "pronunciation": "타베루"
+          }},
+          {{
+            "word": "学生",
+            "meaning": "학생",
+            "pronunciation": "가쿠세이"
+          }}
+        ]
+        
+        [텍스트]:
+        {text[:10000]} 
+        """
+        # Limit text length to avoid token limits for vocabulary extraction context
+        
+        response = model.generate_content(prompt)
+        text_resp = response.text
+        cleaned = text_resp.replace("```json", "").replace("```", "").strip()
+        return json.loads(cleaned)
+    except Exception as e:
+        st.error(f"단어 추출 실패: {e}")
+        return []
+
+
+
 # --- Render Logic ---
 def render_quiz_ui():
     qs = st.session_state.quiz_state
@@ -435,7 +481,7 @@ def render_quiz_ui():
 
 
 # --- Main Tabs ---
-tab1, tab2 = st.tabs(["📝 퀴즈 (Quiz)", "📒 오답 노트 (Wrong Notes)"])
+tab1, tab2, tab3 = st.tabs(["📝 퀴즈 (Quiz)", "📒 오답 노트 (Wrong Notes)", "📓 단어장 (Vocabulary)"])
 
 with tab1:
     # If active and in quiz mode, show quiz. Otherwise show dashboard.
@@ -545,4 +591,65 @@ with tab2:
                     if st.button("이 문제 삭제", key=f"del_note_{i}"):
                         history['wrong_notes'].remove(note)
                         st.rerun()
+
+with tab3:
+    st.subheader("📓 AI 단어장 (Vocabulary List)")
+    
+    st.info("현재 선택된 강의 내용에서 중요 단어를 추출하여 단어장을 만듭니다.")
+    
+    col_v1, col_v2 = st.columns([3, 1])
+    
+    with col_v1:
+        target_scope = st.radio("추출 대상", ["현재 선택된 교재", "모든 교재 (오래 걸림)"], horizontal=True)
+    
+    with col_v2: 
+        if st.button("단어장 생성", type="primary"):
+            with st.spinner("단어를 추출하고 있습니다..."):
+                source_text = ""
+                if target_scope == "현재 선택된 교재":
+                    d = fetch_and_parse(DOCS[selected_doc_name])
+                    if d:
+                        all_c = []
+                        for m in d:
+                            for l in d[m]:
+                                all_c.append(l['content'])
+                        source_text = "\\n".join(all_c)
+                else:
+                    # All docs
+                    all_c = []
+                    for k, v in DOCS.items():
+                        d = fetch_and_parse(v)
+                        if d:
+                             for m in d:
+                                for l in d[m]:
+                                    all_c.append(l['content'])
+                    source_text = "\\n".join(all_c)
+                
+                if source_text:
+                    vocab_list = extract_vocabulary(source_text)
+                    st.session_state['vocab_list'] = vocab_list
+                else:
+                    st.error("데이터가 없습니다.")
+    
+    st.divider()
+    
+    if 'vocab_list' in st.session_state and st.session_state['vocab_list']:
+        # Toggle options
+        hide_korean = st.checkbox("뜻 & 발음 숨기기 (암기 테스트용)")
+        
+        vocab_data = st.session_state['vocab_list']
+        
+        # DataFrame Display
+        # Create a display list based on toggle
+        display_data = []
+        for v in vocab_data:
+            row = {"일본어 (Japanese)": v['word']}
+            if not hide_korean:
+                row["뜻 (Meaning)"] = v['meaning']
+                row["발음 (Pronunciation)"] = v['pronunciation']
+            display_data.append(row)
+            
+        st.table(display_data)
+    else:
+        st.caption("단어장을 생성해주세요.")
 
