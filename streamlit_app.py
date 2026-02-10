@@ -90,41 +90,55 @@ def generate_quiz(content, difficulty, count=10):
     # Using latest Flash-Lite as requested
     model = genai.GenerativeModel('gemini-2.5-flash-lite')
     
-    difficulty_instruction = ""
-    language_rules = "질문과 보기는 모두 **한국어**로 작성하세요. (일본어 단어는 한글 발음으로 표기, 예: 타베루)"
-
+    # Define distinct rules and examples per difficulty
     if difficulty == "Easy":
         difficulty_instruction = "기본적인 단어와 간단한 문장 위주로 출제하세요."
+        language_rules = """
+        1. **질문**: 한국어로 작성하세요.
+        2. **보기**: 일본어 단어와 한국어 발음을 함께 적거나, 한국어로만 적으세요. (예: 食べる (타베루) 또는 타베루)
+        """
+        example_options = '["타베루 (먹다)", "노무 (마시다)", "이쿠 (가다)", "쿠루 (오다)", "네루 (자다)"]'
+        
     elif difficulty == "Normal":
         difficulty_instruction = "배운 내용을 충실히 복습할 수 있도록 적절한 난이도로 출제하세요."
+        language_rules = """
+        1. **질문**: 한국어로 작성하세요.
+        2. **보기**: **일본어(한자/히라가나)**와 **한국어 발음**을 함께 표기하세요. 
+           예: 食べる (타베루)
+        """
+        example_options = '["食べる (타베루)", "飲む (노무)", "行く (이쿠)", "来る (쿠루)", "寝る (네루)"]'
+
     elif difficulty == "Hard":
         difficulty_instruction = "복잡한 문법, 반말/존댓말 구분, 미묘한 뉘앙스 차이를 물어보세요."
         language_rules = """
         1. **질문**: 한국어로 작성하세요.
-        2. **보기**: 반드시 **일본어(한자, 히라가나, 가타가나)**로 작성하세요. 
-           **주의**: 절대 한글 발음(예: 타베루)을 적지 마세요. 실제 일본어 텍스트(예: 食べる)를 사용하세요.
+        2. **보기**: 반드시 **일본어(한자, 히라가나, 가타가나)**로만 작성하세요. 
+           **주의**: 절대 한글 발음(예: 타베루)을 적지 마세요. 오직 일본어 텍스트만 보여주세요.
+           예: 食べる (O), 食べる (타베루) (X)
         """
+        example_options = '["食べる", "飲みます", "行った", "来る", "寝ない"]'
+
     elif difficulty == "Very Hard":
-        difficulty_instruction = "고급 어휘와 자연스러운 일본어 표현을 다루세요. (너무 어렵지 않게, N2~N3 수준)"
+        difficulty_instruction = "고급 어휘와 자연스러운 일본어 표현을 다루세요. (N2~N3 수준)"
         language_rules = """
-        1. **질문**: 반드시 **일본어**로 작성하세요.
-        2. **보기**: 반드시 **일본어(한자, 히라가나, 가타가나)**로 작성하세요.
-           **주의**: 절대 한글 발음(예: 타베루)을 적지 마세요. 실제 일본어 텍스트(예: 食べる)를 사용하세요.
+        1. **질문**: **일본어**로 작성하세요.
+        2. **보기**: 반드시 **일본어(한자, 히라가나, 가타가나)**로만 작성하세요.
+           **주의**: 절대 한글 발음이나 한국어 뜻을 적지 마세요.
         """
+        example_options = '["召し上がる", "参る", "伺う", "存じる", "申す"]'
 
     prompt = f"""
     당신은 엄격하고 전문적인 일본어 학원 선생님입니다.
-    아래의 [수업 노트]를 바탕으로 복습용 5지 선다형 퀴즈를 {count}문제 만들어주세요.
+    아래의 [수업 노트]를 바탕으로 복습용 5지 선다형 퀴즈를 {{count}}문제 만들어주세요.
 
-    난이도: {difficulty}
-    {difficulty_instruction}
+    난이도: {{difficulty}}
+    {{difficulty_instruction}}
 
     **언어 규칙 (Language Rules) - 중요!:**
-    {language_rules}
+    {{language_rules}}
     
     * **해설(Explanation)**: 난이도와 상관없이 무조건 **한국어**로 설명하세요. 
       단, 일본어 단어나 문장이 나올 경우 반드시 괄호 안에 한국어 발음과 뜻을 적어주세요. 
-      예: "食べる(타베루, 먹다)는..."
 
     **기본 규칙:**
     1. 문제는 5지 선다형(객관식)이어야 합니다.
@@ -134,16 +148,14 @@ def generate_quiz(content, difficulty, count=10):
     **중요한 출제 지침 (Critical):**
     * **단순 암기 금지**: "어제 몇 시까지 근무했습니까?"와 같이 문서 내의 **구체적인 사실(Fact)**을 묻지 마세요.
     * **응용 능력 평가**: 문서에 나온 **단어(Vocabulary)**와 **문법(Grammar)**을 활용하여, 새로운 문맥이나 일반적인 일본어 실력을 테스트하는 문제를 만드세요.
-      * 나쁜 예: "수업 노트에서 선생님은 무엇을 먹었나요?"
-      * 좋은 예: "다음 중 '먹다(食べる)'의 정중한 과거형으로 올바른 것은?" 또는 "문맥상 괄호 안에 들어갈 조사로 적절한 것은?"
 
     **출력 형식 (JSON Array Only, No Markdown):**
     [
       {{
-        "question": "다음 중 '먹다'의 정중한 표현은?",
-        "options": ["타베루", "타베마스", "논데", "이쿠", "쿠루"],
-        "answer_index": 1, 
-        "explanation": "'타베마스'가 정중한 표현입니다.",
+        "question": "다음 중 올바른 표현은?",
+        "options": {{example_options}},
+        "answer_index": 0, 
+        "explanation": "'...'(설명)가 정답입니다.",
         "type": "문법"
       }}
     ]
@@ -154,7 +166,7 @@ def generate_quiz(content, difficulty, count=10):
     3. Trailing Comma (마지막 항목 뒤 쉼표)를 남기지 마세요.
 
     [수업 노트]:
-    {content}
+    {{content}}
     """
 
     try:
