@@ -211,14 +211,28 @@ def save_progress():
     history = get_current_stats()
     return json.dumps(history, ensure_ascii=False, indent=2)
 
-def load_progress(uploaded_file):
-    try:
-        data = json.load(uploaded_file)
-        # Validation could be added here
-        st.session_state.history = data
-        st.toast("데이터를 성공적으로 불러왔습니다!", icon="✅")
-    except Exception as e:
-        st.error(f"파일 불러오기 실패: {e}")
+def process_uploaded_file():
+    """Callback for file uploader"""
+    uploaded = st.session_state.get('uploaded_file_widget')
+    if uploaded is not None:
+        try:
+            uploaded.seek(0)
+            data = json.load(uploaded)
+            if 'mastery' in data or 'vocab_list' in data:
+                st.session_state.history = data
+                
+                # Feedback stats
+                m_count = sum(1 for v in data.get('mastery', {}).values() if v >= 3)
+                v_count = len(data.get('vocab_list', []))
+                
+                # We can't use st.success here easily as it clears on rerun, but toast works
+                st.toast(f"✅ 데이터 복구 완료! (마스터: {m_count}, 단어: {v_count})", icon="🎉")
+            else:
+                st.toast("⚠️ 올바르지 않은 데이터 파일입니다.", icon="❌")
+        except Exception as e:
+            st.toast(f"❌ 파일 읽기 실패: {e}", icon="🔥")
+
+# ... (omitting load_progress as it's replaced by callback logic, but keeping save_progress)
 
 # --- UI: Sidebar ---
 with st.sidebar:
@@ -255,12 +269,15 @@ with st.sidebar:
         mime="application/json"
     )
     
-    # Upload
-    uploaded_file = st.file_uploader("기록 불러오기 (Upload)", type=["json"])
-    if uploaded_file is not None:
-        if st.button("파일 적용하기"):
-            load_progress(uploaded_file)
-            st.rerun()
+    # Upload (Using Callback)
+    st.file_uploader(
+        "기록 불러오기 (Upload)", 
+        type=["json"], 
+        key="uploaded_file_widget", 
+        on_change=process_uploaded_file
+    )
+
+    st.divider()
 
     st.divider()
     
