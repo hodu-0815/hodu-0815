@@ -175,6 +175,30 @@ def generate_quiz(content, difficulty, count=10):
             st.code(text if 'text' in locals() else "No response")
         return []
 
+# ... (Imports are unchanged at the top, just replacing from line 173 onwards ideally, but I will do a larger chunk to restructure)
+
+# --- Logic: Persistence & Stats ---
+def get_current_stats():
+    if 'history' not in st.session_state:
+        st.session_state.history = {
+            'mastery': {},  # "question_text": correct_count (int)
+            'wrong_notes': []  # List of {question, options, answer_index, explanation, your_answer}
+        }
+    return st.session_state.history
+
+def save_progress():
+    history = get_current_stats()
+    return json.dumps(history, ensure_ascii=False, indent=2)
+
+def load_progress(uploaded_file):
+    try:
+        data = json.load(uploaded_file)
+        # Validation could be added here
+        st.session_state.history = data
+        st.toast("데이터를 성공적으로 불러왔습니다!", icon="✅")
+    except Exception as e:
+        st.error(f"파일 불러오기 실패: {e}")
+
 # --- UI: Sidebar ---
 with st.sidebar:
     st.title("설정 (Settings)")
@@ -189,6 +213,36 @@ with st.sidebar:
         value="Normal"
     )
     
+    st.divider()
+    
+    st.subheader("데이터 관리 (Data)")
+    
+    # Init stats
+    stats = get_current_stats()
+    mastered_count = sum(1 for v in stats['mastery'].values() if v >= 3)
+    wrong_count = len(stats['wrong_notes'])
+    
+    st.caption(f"🏆 마스터한 문제: {mastered_count}개")
+    st.caption(f"📝 오답 노트: {wrong_count}개")
+
+    # Download
+    json_str = save_progress()
+    st.download_button(
+        label="내 기록 저장하기 (Download)",
+        data=json_str,
+        file_name="japanese_quiz_progress.json",
+        mime="application/json"
+    )
+    
+    # Upload
+    uploaded_file = st.file_uploader("기록 불러오기 (Upload)", type=["json"])
+    if uploaded_file is not None:
+        if st.button("파일 적용하기"):
+            load_progress(uploaded_file)
+            st.rerun()
+
+    st.divider()
+    
     if st.button("캐시 삭제 (새로고침)"):
         st.cache_data.clear()
         st.rerun()
@@ -200,7 +254,7 @@ if "GOOGLE_API_KEY" not in st.secrets:
     st.warning("⚠️ `.streamlit/secrets.toml` 파일에 `GOOGLE_API_KEY`를 설정해주세요.")
     st.stop()
 
-# State Management
+# State Management (Quiz Session)
 if 'quiz_state' not in st.session_state:
     st.session_state.quiz_state = {
         'active': False,
@@ -209,10 +263,30 @@ if 'quiz_state' not in st.session_state:
         'score': 0,
         'selected_option': None,
         'checked': False,
-        'completed': False
+        'completed': False,
+        'mode': 'quiz' # 'quiz' or 'wrong_note'
     }
 
-def start_quiz(questions):
+def start_quiz(questions, mode='quiz'):
+    # Filter mastered questions if in normal quiz mode
+    if mode == 'quiz':
+        history = get_current_stats()
+        filtered_questions = []
+        for q in questions:
+            q_text = q['question']
+            # If mastered (>= 3 correct), skip
+            if history['mastery'].get(q_text, 0) < 3:
+                filtered_questions.append(q)
+        
+        if len(filtered_questions) < len(questions):
+            st.toast(f"마스터한 {len(questions) - len(filtered_questions)}문제를 건너뛰었습니다! 😎")
+            
+        questions = filtered_questions
+
+    if not questions:
+        st.warning("출제할 문제가 없습니다! (모두 마스터했거나 데이터가 부족합니다)")
+        return
+
     st.session_state.quiz_state = {
         'active': True,
         'questions': questions,
@@ -220,17 +294,52 @@ def start_quiz(questions):
         'score': 0,
         'selected_option': None,
         'checked': False,
-        'completed': False
+        'completed': False,
+        'mode': mode
     }
 
 def submit_answer():
     st.session_state.quiz_state['checked'] = True
     qs = st.session_state.quiz_state
     q = qs['questions'][qs['current_index']]
+    history = get_current_stats()
     
     # Check answer
-    if qs['selected_option'] == q['options'][q['answer_index']]:
+    correct_option = q['options'][q['answer_index']]
+    is_correct = (qs['selected_option'] == correct_option)
+    
+    if is_correct:
         qs['score'] += 1
+        # Update Mastery (Only in normal quiz mode)
+        if qs['mode'] == 'quiz':
+            current_mastery = history['mastery'].get(q['question'], 0)
+            history['mastery'][q['question']] = current_mastery + 1
+            if history['mastery'][q['question']] == 3:
+                 st.toast("🎉 축하합니다! 이 문제를 마스터했습니다! (3번 연속 정답)", icon="🏆")
+        
+        # If answering correctly in wrong note mode, maybe remove it?
+        # User requested "view wrong notes", not necessarily "remove logic".
+        # Let's keep it simple: Wrong notes are a collection.
+        # Optional: Remove from wrong notes if answered correctly? 
+        # For now, let's keep them until manually cleared or just append.
+        # Actually better UX: If I get it right in Wrong Note mode, I probably explicitly want to clear it?
+        # Let's add a "Delete from note" button instead of auto-delete.
+        
+    else:
+        # Incorrect behavior
+        # Reset Mastery streak? Or decrement?
+        # Usually stricter is reset to 0.
+        if qs['mode'] == 'quiz':
+            history['mastery'][q['question']] = 0
+            
+            # Add to Wrong Notes if not already present
+            # distinct by question text
+            exists = any(wn['question'] == q['question'] for wn in history['wrong_notes'])
+            if not exists:
+                # Store full question object + my wrong answer (optional)
+                note_entry = q.copy()
+                # note_entry['failed_at'] = ...
+                history['wrong_notes'].append(note_entry)
 
 def next_question():
     qs = st.session_state.quiz_state
@@ -245,8 +354,8 @@ def reset_quiz():
     st.session_state.quiz_state['active'] = False
 
 
-# QUIZ VIEW
-if st.session_state.quiz_state['active']:
+# --- Render Logic ---
+def render_quiz_ui():
     qs = st.session_state.quiz_state
     
     if qs['completed']:
@@ -255,7 +364,7 @@ if st.session_state.quiz_state['active']:
         
         st.success(f"🎉 퀴즈 종료! 점수: {qs['score']} / {len(qs['questions'])}")
         
-        if st.button("홈으로 돌아가기"):
+        if st.button("홈으로 돌아가기", key="home_quiz"):
             reset_quiz()
             st.rerun()
     else:
@@ -265,19 +374,18 @@ if st.session_state.quiz_state['active']:
         # Progress
         progress = (qs['current_index']) / total
         st.progress(progress)
-        st.caption(f"문제 {qs['current_index'] + 1} / {total} • {q.get('type', '일반')}")
+        mode_label = "오답 노트" if qs['mode'] == 'wrong_note' else "일반 퀴즈"
+        st.caption(f"[{mode_label}] 문제 {qs['current_index'] + 1} / {total} • {q.get('type', '일반')}")
         
         # Question Styling
         st.markdown(f"### Q. {q['question']}")
         
         # Options
-        # Use radio for selection. If checked, disable it.
-        # We need a key that changes per question to reset selection
         selection = st.radio(
             "정답을 선택하세요:",
             q['options'],
             index=None,
-            key=f"q_{qs['current_index']}",
+            key=f"q_{qs['mode']}_{qs['current_index']}",
             disabled=qs['checked']
         )
         
@@ -286,7 +394,7 @@ if st.session_state.quiz_state['active']:
 
         # Action Buttons
         if not qs['checked']:
-            if st.button("정답 확인", type="primary", disabled=not selection):
+            if st.button("정답 확인", type="primary", disabled=not selection, key=f"check_{qs['mode']}"):
                 submit_answer()
                 st.rerun()
         else:
@@ -301,76 +409,125 @@ if st.session_state.quiz_state['active']:
                 
             st.info(f"💡 해설: {q.get('explanation', '해설 없음')}")
 
-            if st.button("다음 문제 ➡", type="primary"):
+            if st.button("다음 문제 ➡", type="primary", key=f"next_{qs['mode']}"):
                 next_question()
                 st.rerun()
                 
         # Exit
-        if st.button("퀴즈 그만두기", type="secondary"):
+        if st.button("퀴즈 그만두기", type="secondary", key=f"stop_{qs['mode']}"):
             reset_quiz()
             st.rerun()
 
-else:
-    # DASHBOARD VIEW
-    
-    # 1. Current Document Review
-    st.subheader(f"📖 선택된 교재: {selected_doc_name}")
-    
-    # Load Data
-    data = fetch_and_parse(DOCS[selected_doc_name])
-    
-    if data:
-        # Calculate stats
-        total_days = sum(len(lessons) for lessons in data.values())
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-             st.write(f"총 **{total_days}일치**의 수업 내용이 있습니다.")
-        with col2:
-             if st.button(f"'{selected_doc_name}' 전체 복습하기", type="primary", use_container_width=True):
-                 with st.spinner("AI가 문제를 출제하고 있습니다..."):
-                    all_content = []
-                    for m in data:
-                        for l in data[m]:
-                            all_content.append(l['content'])
-                    
-                    full_text = "\n\n".join(all_content)
-                    if len(full_text) > 30000:
-                        full_text = full_text[:30000]
-                        
-                    questions = generate_quiz(full_text, difficulty, count=10)
-                    if questions:
-                        start_quiz(questions)
-                        st.rerun()
+
+# --- Main Tabs ---
+tab1, tab2 = st.tabs(["📝 퀴즈 (Quiz)", "📒 오답 노트 (Wrong Notes)"])
+
+with tab1:
+    # If active and in quiz mode, show quiz. Otherwise show dashboard.
+    if st.session_state.quiz_state['active'] and st.session_state.quiz_state['mode'] == 'quiz':
+        render_quiz_ui()
+    elif st.session_state.quiz_state['active'] and st.session_state.quiz_state['mode'] == 'wrong_note':
+        st.info("현재 '오답 노트' 탭에서 복습을 진행 중입니다.")
     else:
-        st.error("문서를 불러오지 못했습니다.")
-
-    st.markdown("---")
-
-    # 2. Grand Exam (Bottom section)
-    st.subheader("🏆 전체 종합 평가 (Grand Exam)")
-    st.write("3월부터 지금까지 배운 모든 내용을 종합해서 테스트합니다.")
-    
-    if st.button("종합 평가 시작하기", type="secondary"):
-         with st.spinner("모든 교재를 분석 중입니다..."):
-            all_content = []
+        # DASHBOARD VIEW
+        st.subheader(f"📖 선택된 교재: {selected_doc_name}")
+        
+        data = fetch_and_parse(DOCS[selected_doc_name])
+        
+        if data:
+            # Calculate stats
+            total_days = sum(len(lessons) for lessons in data.values())
             
-            for name, doc_id in DOCS.items():
-                d = fetch_and_parse(doc_id)
-                if d:
-                    for m in d:
-                        for l in d[m]:
-                             all_content.append(l['content'])
-            
-            if all_content:
-                full_text = "\n\n".join(all_content)
-                chunks = full_text.split('\n\n')
-                random.shuffle(chunks)
-                sample_text = "\n\n".join(chunks)[:35000]
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                 st.write(f"총 **{total_days}일치**의 수업 내용이 있습니다.")
+            with col2:
+                 if st.button(f"'{selected_doc_name}' 전체 복습하기", type="primary", use_container_width=True):
+                     with st.spinner("AI가 문제를 출제하고 있습니다..."):
+                        all_content = []
+                        for m in data:
+                            for l in data[m]:
+                                all_content.append(l['content'])
+                        
+                        full_text = "\n\n".join(all_content)
+                        if len(full_text) > 30000:
+                            full_text = full_text[:30000]
+                            
+                        # Request slightly more questions to account for filtering
+                        questions = generate_quiz(full_text, difficulty, count=15)
+                        if questions:
+                            start_quiz(questions, mode='quiz')
+                            st.rerun()
+        else:
+            st.error("문서를 불러오지 못했습니다.")
+
+        st.markdown("---")
+
+        # 2. Grand Exam (Bottom section)
+        st.subheader("🏆 전체 종합 평가 (Grand Exam)")
+        st.write("3월부터 지금까지 배운 모든 내용을 종합해서 테스트합니다.")
+        
+        if st.button("종합 평가 시작하기", type="secondary"):
+             with st.spinner("모든 교재를 분석 중입니다..."):
+                all_content = []
                 
-                questions = generate_quiz(sample_text, difficulty, count=10)
-                if questions:
-                    start_quiz(questions)
-                    st.rerun()
-            else:
-                st.error("데이터가 없습니다.")
+                for name, doc_id in DOCS.items():
+                    d = fetch_and_parse(doc_id)
+                    if d:
+                        for m in d:
+                            for l in d[m]:
+                                 all_content.append(l['content'])
+                
+                if all_content:
+                    full_text = "\n\n".join(all_content)
+                    chunks = full_text.split('\n\n')
+                    random.shuffle(chunks)
+                    sample_text = "\n\n".join(chunks)[:35000]
+                    
+                    questions = generate_quiz(sample_text, difficulty, count=15)
+                    if questions:
+                        start_quiz(questions, mode='quiz')
+                        st.rerun()
+                else:
+                    st.error("데이터가 없습니다.")
+
+with tab2:
+    st.subheader("📒 오답 노트 (Wrong Answer Notes)")
+    
+    # If active and in wrong_note mode, show quiz UI here
+    if st.session_state.quiz_state['active'] and st.session_state.quiz_state['mode'] == 'wrong_note':
+        render_quiz_ui()
+    elif st.session_state.quiz_state['active'] and st.session_state.quiz_state['mode'] == 'quiz':
+        st.info("현재 '퀴즈' 탭에서 학습을 진행 중입니다.")
+    else:
+        # Default Wrong Note List View
+        history = get_current_stats()
+        wrong_notes = history['wrong_notes']
+        
+        if not wrong_notes:
+            st.info("아직 오답 노트가 비어있습니다. 문제를 틀리면 여기에 자동으로 추가됩니다.")
+        else:
+            st.write(f"총 **{len(wrong_notes)}개**의 틀린 문제가 있습니다.")
+            
+            if st.button("오답 노트 복습 시작하기 (Start Review)", type="primary"):
+                review_qs = wrong_notes.copy()
+                random.shuffle(review_qs)
+                start_quiz(review_qs, mode='wrong_note')
+                st.rerun()
+                
+            st.divider()
+            
+            for i, note in enumerate(reversed(wrong_notes)):
+                # Store full question text for display
+                q_text = note['question']
+                # Correct Answer
+                ans = note['options'][note['answer_index']]
+                
+                with st.expander(f"#{len(wrong_notes)-i}: {q_text}"):
+                    st.write(f"**정답**: {ans}")
+                    st.write(f"**해설**: {note.get('explanation', '')}")
+                    
+                    if st.button("이 문제 삭제", key=f"del_note_{i}"):
+                        history['wrong_notes'].remove(note)
+                        st.rerun()
+
