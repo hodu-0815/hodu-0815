@@ -654,6 +654,10 @@ with tab3:
                     # Sessional Persistence
                     st.session_state.history['vocab_list'] = vocab_list
                     st.toast("단어장이 생성되었습니다! (내 기록 저장하기로 영구 저장 가능)", icon="💾")
+                    
+                    # Force rerun to update Download button in sidebar with new data
+                    time.sleep(1.0)
+                    st.rerun()
                 else:
                     st.error("데이터가 없습니다.")
     
