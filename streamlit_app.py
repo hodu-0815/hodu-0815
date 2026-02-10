@@ -198,8 +198,13 @@ def get_current_stats():
     if 'history' not in st.session_state:
         st.session_state.history = {
             'mastery': {},  # "question_text": correct_count (int)
-            'wrong_notes': []  # List of {question, options, answer_index, explanation, your_answer}
+            'wrong_notes': [],  # List of {question, options, answer_index, explanation, your_answer}
+            'vocab_list': []    # List of {word, meaning, pronunciation}
         }
+    # Ensure vocab_list exists for backward compatibility
+    if 'vocab_list' not in st.session_state.history:
+        st.session_state.history['vocab_list'] = []
+        
     return st.session_state.history
 
 def save_progress():
@@ -386,6 +391,7 @@ def extract_vocabulary(text):
         1. 전체 문장이 아니라 **단어(Word)**나 **숙어(Idiom)** 위주로 뽑아주세요.
         2. 너무 쉬운 기초 단어는 제외하고, 학습 가치가 있는 단어 위주로 20~30개 정도 추출하세요.
         3. 문맥상 중요한 단어를 우선하세요.
+        4. **Word 필드 중요**: 한국어 발음(예: 타베루)을 적지 말고, 반드시 **일본어(한자, 히라가나, 가타가나)**로 적으세요.
         
         [출력 형식 (JSON Array Only)]
         [
@@ -628,17 +634,20 @@ with tab3:
                 
                 if source_text:
                     vocab_list = extract_vocabulary(source_text)
-                    st.session_state['vocab_list'] = vocab_list
+                    # Sessional Persistence
+                    st.session_state.history['vocab_list'] = vocab_list
+                    st.toast("단어장이 생성되었습니다! (내 기록 저장하기로 영구 저장 가능)", icon="💾")
                 else:
                     st.error("데이터가 없습니다.")
     
     st.divider()
     
-    if 'vocab_list' in st.session_state and st.session_state['vocab_list']:
+    # Use history for persistence
+    if 'vocab_list' in st.session_state.history and st.session_state.history['vocab_list']:
         # Toggle options
         hide_korean = st.checkbox("뜻 & 발음 숨기기 (암기 테스트용)")
         
-        vocab_data = st.session_state['vocab_list']
+        vocab_data = st.session_state.history['vocab_list']
         
         # DataFrame Display
         # Create a display list based on toggle
