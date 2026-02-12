@@ -173,23 +173,39 @@ def generate_quiz(content, difficulty, count=10):
     {{content}}
     """
 
-    try:
-        response = model.generate_content(prompt)
-        text = response.text
-        # Clean markdown if present
-        cleaned = text.replace("```json", "").replace("```", "").strip()
-        
-        # Additional cleanup for common JSON errors
-        # Remove trailing commas in arrays/objects (simple regex approach)
-        cleaned = re.sub(r',\s*([\]}])', r'\1', cleaned)
-        
-        return json.loads(cleaned)
-    except Exception as e:
-        st.error(f"문제 생성 실패 (JSON 오류): {e}")
-        # Show raw output for debugging if needed (hidden in expander)
-        with st.expander("AI 원본 응답 보기 (디버깅용)"):
-            st.code(text if 'text' in locals() else "No response")
-        return []
+    retry_count = 0
+    max_retries = 3
+    
+    while retry_count < max_retries:
+        try:
+            response = model.generate_content(prompt)
+            text = response.text
+            
+            if not text:
+                raise ValueError("Empty response from AI")
+
+            # Clean markdown if present
+            cleaned = text.replace("```json", "").replace("```", "").strip()
+            
+            # Additional cleanup for common JSON errors
+            # Remove trailing commas in arrays/objects (simple regex approach)
+            cleaned = re.sub(r',\s*([\]}])', r'\1', cleaned)
+            
+            if not cleaned:
+                 raise ValueError("Empty JSON after cleaning")
+
+            return json.loads(cleaned)
+            
+        except Exception as e:
+            retry_count += 1
+            print(f"Attempt {retry_count} failed: {e}")
+            if retry_count == max_retries:
+                st.error(f"문제 생성 실패 (3회 재시도 후): {e}")
+                # Show raw output for debugging if needed (hidden in expander)
+                with st.expander("AI 원본 응답 보기 (디버깅용)"):
+                    st.code(text if 'text' in locals() else "No response")
+                return []
+            time.sleep(1) # Wait a bit before retrying
 
 # ... (Imports are unchanged at the top, just replacing from line 173 onwards ideally, but I will do a larger chunk to restructure)
 
@@ -395,47 +411,68 @@ def reset_quiz():
 # --- Logic: Vocabulary ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def extract_vocabulary(text):
-    try:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash-lite')
-        
-        prompt = f"""
-        당신은 일본어 선생님입니다. 
-        아래 텍스트에서 학습에 필요한 **주요 단어와 숙어**를 추출해서 정리해주세요.
-        
-        [지침]
-        1. 전체 문장이 아니라 **단어(Word)**나 **숙어(Idiom)** 위주로 뽑아주세요.
-        2. 너무 쉬운 기초 단어는 제외하고, 학습 가치가 있는 단어 위주로 20~30개 정도 추출하세요.
-        3. 문맥상 중요한 단어를 우선하세요.
-        4. **Word 필드 중요**: 한국어 발음(예: 타베루)을 적지 말고, 반드시 **일본어(한자, 히라가나, 가타가나)**로 적으세요.
-        
-        [출력 형식 (JSON Array Only)]
-        [
-          {{
-            "word": "食べる",
-            "meaning": "먹다",
-            "pronunciation": "타베루"
-          }},
-          {{
-            "word": "学生",
-            "meaning": "학생",
-            "pronunciation": "가쿠세이"
-          }}
-        ]
-        
-        [텍스트]:
-        {text[:10000]} 
-        """
-        # Limit text length to avoid token limits for vocabulary extraction context
-        
-        response = model.generate_content(prompt)
-        text_resp = response.text
-        cleaned = text_resp.replace("```json", "").replace("```", "").strip()
-        return json.loads(cleaned)
-    except Exception as e:
-        st.error(f"단어 추출 실패: {e}")
+    api_key = st.secrets.get("GOOGLE_API_KEY")
+    if not api_key:
+        st.error("Google API Key None")
         return []
+        
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.5-flash-lite')
+    
+    prompt = f"""
+    당신은 일본어 선생님입니다. 
+    아래 텍스트에서 학습에 필요한 **주요 단어와 숙어**를 추출해서 정리해주세요.
+    
+    [지침]
+    1. 전체 문장이 아니라 **단어(Word)**나 **숙어(Idiom)** 위주로 뽑아주세요.
+    2. 너무 쉬운 기초 단어는 제외하고, 학습 가치가 있는 단어 위주로 20~30개 정도 추출하세요.
+    3. 문맥상 중요한 단어를 우선하세요.
+    4. **Word 필드 중요**: 한국어 발음(예: 타베루)을 적지 말고, 반드시 **일본어(한자, 히라가나, 가타가나)**로 적으세요.
+    
+    [출력 형식 (JSON Array Only)]
+    [
+      {{
+        "word": "食べる",
+        "meaning": "먹다",
+        "pronunciation": "타베루"
+      }},
+      {{
+        "word": "学生",
+        "meaning": "학생",
+        "pronunciation": "가쿠세이"
+      }}
+    ]
+    
+    [텍스트]:
+    {text[:10000]} 
+    """
+
+    retry_count = 0
+    max_retries = 3
+    
+    while retry_count < max_retries:
+        try:
+            response = model.generate_content(prompt)
+            text_resp = response.text
+            
+            if not text_resp:
+                raise ValueError("Empty response from AI")
+
+            cleaned = text_resp.replace("```json", "").replace("```", "").strip()
+            cleaned = re.sub(r',\s*([\]}])', r'\1', cleaned)
+            
+            if not cleaned:
+                 raise ValueError("Empty JSON after cleaning")
+
+            return json.loads(cleaned)
+        except Exception as e:
+            retry_count += 1
+            if retry_count == max_retries:
+                st.error(f"단어 추출 실패 (3회 재시도 후): {e}")
+                return []
+            time.sleep(1)
+            
+    return []
 
 
 
