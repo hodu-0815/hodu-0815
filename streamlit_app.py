@@ -176,9 +176,17 @@ def generate_quiz(content, difficulty, count=10):
     retry_count = 0
     max_retries = 3
     
+    # Safety Settings to prevent blocking
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+
     while retry_count < max_retries:
         try:
-            response = model.generate_content(prompt)
+            response = model.generate_content(prompt, safety_settings=safety_settings)
             text = response.text
             
             if not text:
@@ -447,12 +455,21 @@ def extract_vocabulary(text):
     {text[:10000]} 
     """
 
+    MAX_RETRIES = 3
     retry_count = 0
-    max_retries = 3
     
-    while retry_count < max_retries:
+    # Safety Settings
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+    
+    while retry_count < MAX_RETRIES:
         try:
-            response = model.generate_content(prompt)
+            # Limit text length to avoid token limits for vocabulary extraction context
+            response = model.generate_content(prompt, safety_settings=safety_settings)
             text_resp = response.text
             
             if not text_resp:
@@ -467,7 +484,7 @@ def extract_vocabulary(text):
             return json.loads(cleaned)
         except Exception as e:
             retry_count += 1
-            if retry_count == max_retries:
+            if retry_count == MAX_RETRIES:
                 st.error(f"단어 추출 실패 (3회 재시도 후): {e}")
                 return []
             time.sleep(1)
